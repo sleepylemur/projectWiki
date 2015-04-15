@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Wiki-mazing</title>
+</head>
+<body>
+<ul>
+<% docs.forEach( function(doc) { %>
+  <li><a href="/<%= doc.title %>"><%= doc.title %></a></li>
+<% }); %>
+</ul>
+</body>
+</html>

@@ -1,0 +1,29 @@
+{
+  "name": "projectWiki",
+  "version": "1.0.0",
+  "description": "",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sleepylemur/projectWiki.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/sleepylemur/projectWiki/issues"
+  },
+  "homepage": "https://github.com/sleepylemur/projectWiki",
+  "dependencies": {
+    "body-parser": "^1.12.2",
+    "connect-mongo": "^0.8.0",
+    "ejs": "^2.3.1",
+    "express": "^4.12.3",
+    "express-session": "^1.11.1",
+    "method-override": "^2.3.2",
+    "sqlite3": "^3.0.5"
+  }
+}
