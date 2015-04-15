@@ -8,7 +8,7 @@
 
 <% include partials/header %>
 
-<form action="/doc/<%= docid %>" method="POST" onsubmit="return testSubmit()">
+<form action=<%= formaction %> method="POST" onsubmit="return testSubmit()">
   <ul>
     <li><label for="title">title</label><input id="titlebox" type="text" name="title" value="<%= title %>" onchange="validateTitle()"></li>
     <li><label for="uniquetitle">is unique</label><input id="uniquetitlebox" type="checkbox" disabled></li>

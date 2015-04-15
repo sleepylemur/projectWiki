@@ -46,6 +46,12 @@ app.use(bodyParser.urlencoded({
 //   next()
 // });
 
+function ensureUser(req) {
+  if (!req.session.user) {
+    req.session.user = {username: "guest", curpage: "/"};
+  }
+}
+
 // retrieve index of docs
 app.get("/", function (req,res) {
   res.redirect("/docs");
@@ -54,14 +60,45 @@ app.get("/", function (req,res) {
 app.get("/docs", function (req,res) {
   db.all("SELECT title,docs.docid,docs.version FROM docs JOIN versionedDocs ON docs.docid = versionedDocs.docid AND docs.version = versionedDocs.version", function(err,data) {
     if (err) throw(err);
-    res.render("index.ejs",{docs: data});
+    ensureUser(req);
+    req.session.user.curpage = req.originalUrl;
+    res.render("index.ejs",{docs: data, user: req.session.user});
   });
 });
 
-// retrieve new doc form
-app.get("/docs/new", function (req,res) {
-  res.render("new.ejs");
+app.get("/users/new", function (req,res) {
+  res.render("useredit.ejs", {formaction: "/users", user: req.session.user});
 });
+
+app.get("/users/login", function (req,res) {
+  res.render("userlogin.ejs");
+});
+
+app.post("/users/login", function (req,res) {
+  ensureUser(req);
+  req.session.user.username = req.body.username;
+  res.redirect(req.session.user.curpage);
+});
+
+app.get("/users/logout", function (req,res) {
+  ensureUser(req);
+  req.session.user.username = "guest";
+  res.redirect(req.session.user.curpage);
+});
+
+app.post("/users", function (req,res) {
+  ensureUser(req);
+  req.session.user.username = req.body.username;
+  res.redirect(req.session.user.curpage);
+  // res.redirect(req.session.curpage);
+});
+
+// currently only replaces [[title]] with the markdown version [title](title)
+function replaceKeywords(text) {
+  text = text.replace(/\[\[(.*?)\]\]/g, "[$1]($1)");
+  return text;
+}
+
 
 // retrieve doc by title
 app.get("/doc/:title", function (req,res) {
@@ -72,9 +109,16 @@ app.get("/doc/:title", function (req,res) {
       if (typeof data === 'undefined') {
         res.send(req.params.title + " not found.");
       } else {
-        res.render("doc.ejs",{title: data.title, body: marked(data.body)});
+        ensureUser(req);
+        req.session.user.curpage = req.originalUrl;
+        res.render("doc.ejs",{title: data.title, body: marked(replaceKeywords(data.body)), user: req.session.user});
       }
     });
+});
+
+// retrieve new doc form. uses same form as editpage
+app.get("/docs/new", function (req,res) {
+  res.render("docedit.ejs", {formaction: "/docs", docid:0, title: "untitled", body: "", user: req.session.user});
 });
 
 // retrieve edit page for doc
@@ -86,7 +130,9 @@ app.get("/doc/:title/edit", function (req,res) {
       if (typeof data === "undefined") {
         res.send(req.params.title + " not found.");
       } else {
-        res.render("docedit.ejs",{docid: data.docid, title: data.title, body: data.body});
+        ensureUser(req);
+        req.session.user.curpage = req.originalUrl;
+        res.render("docedit.ejs",{formaction: "/doc/"+data.docid, docid: data.docid, title: data.title, body: data.body, user: req.session.user});
       }
     });
 });
@@ -103,8 +149,7 @@ app.post("/validateTitle", function (req,res) {
   });
 });
 
-// process edit for doc ----- NEED to verify that title is unique BEFORE this
-// TODO lock database while updating. Include userid
+// update doc docid.
 app.post("/doc/:docid", function (req,res) {
   db.get("SELECT max(version) FROM versionedDocs WHERE docid = ?", req.params.docid, function (err,data) {
     if (err) throw(err);
@@ -125,7 +170,7 @@ app.post("/doc/:docid", function (req,res) {
   });
 });
 
-// post new doc ----- NEED to verify that title is unique BEFORE this
+// add new doc
 app.post("/docs", function (req,res) {
   db.run("INSERT INTO docs (version) VALUES (1)", function (err) {
     if (err) throw(err);

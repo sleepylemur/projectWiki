@@ -1,3 +1,10 @@
 <h1>wikilicious</h1>
 <a href="/docs">list of docs</a>
 <a href="/docs/new">new</a>
+<% if (user.username === "guest") { %>
+  <a href="/users/new">create new account</a>
+  <a href="/users/login">login</a>
+<% } else { %>
+  <a href="/users/logout">logout</a>
+<% } %>
+<p>user: <%= JSON.stringify(user) %></p>
