@@ -5,9 +5,11 @@
   <title>Wiki-mazing</title>
 </head>
 <body>
+<% include partials/header %>
+
 <ul>
 <% docs.forEach( function(doc) { %>
-  <li><a href="/<%= doc.title %>"><%= doc.title %></a></li>
+  <li><a href="/doc/<%= doc.title %>"><%= doc.title %></a></li>
 <% }); %>
 </ul>
 </body>

@@ -8,11 +8,48 @@
 
 <% include partials/header %>
 
-<form action="/<%= docid %>" method="POST">
-<input type="text" name="title" value="<%= title %>">
-<textarea name="body"><%= body %></textarea>
-<button type="submit">submit</button>
+<form action="/doc/<%= docid %>" method="POST" onsubmit="return testSubmit()">
+  <ul>
+    <li><label for="title">title</label><input id="titlebox" type="text" name="title" value="<%= title %>" onchange="validateTitle()"></li>
+    <li><label for="uniquetitle">is unique</label><input id="uniquetitlebox" type="checkbox" disabled></li>
+    <li><label for="body">body</label><textarea name="body"><%= body %></textarea></li>
+    <li><button type="submit">submit</button></li>
+
+    <input id="docidbox" type="hidden" name="docid" value="<%= docid %>">
+  </ul>
 </form>
   
+<script>
+  function testSubmit() {
+    if (document.getElementById("uniquetitlebox").checked) {
+      return true;
+    } else {
+      document.getElementById("titlebox").focus();
+      alert("that title is taken");
+      return false;
+    }
+  }
+  function validateTitle() {
+    document.getElementById("uniquetitlebox").checked = false;
+    var title = document.getElementById("titlebox");
+
+    var xhr = new XMLHttpRequest();
+
+    xhr.onreadystatechange = function () {
+      if (xhr.readyState === 4 && xhr.status === 200) {
+        if (xhr.responseText == "true") {
+          document.getElementById("uniquetitlebox").checked = true;
+        } else {
+          document.getElementById("uniquetitlebox").checked = false;
+        }
+      }
+    };
+
+    xhr.open("POST", "/validateTitle");
+    xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+    xhr.send("title="+title.value+"&docid="+document.getElementById("docidbox").value);
+  }
+  window.onload = validateTitle;
+</script>
 </body>
 </html>
