@@ -6,13 +6,26 @@
 </head>
 <body>
 
-<form action="<%= formaction %>" method="POST">
+<form action="<%= formaction %>" method="POST" onsubmit="canSubmit()">
 <p><label for="name">name</label><input type="text" name="name"></p>
 <p><label for="email">email</label><input type="text" name="email"></p>
 <p><label for="username">username</label><input type="text" name="username"></p>
 <p><label for="password">password</label><input type="text" name="password"></p>
 <p><button type="submit">submit</button></p>
 </form>
+
+
+<script>
+  function canSubmit() {
+    if (document.getElementById("uniquetitlebox").checked) {
+      return true;
+    } else {
+      document.getElementById("titlebox").focus();
+      alert("that title is taken");
+      return false;
+    }
+  }
+</script>
   
 </body>
 </html>

@@ -6,7 +6,7 @@
 </head>
 <body>
 
-<% include partials/header %>
+<% include ../partials/header %>
 
 <form action=<%= formaction %> method="POST" onsubmit="return testSubmit()">
   <ul>
@@ -45,7 +45,7 @@
       }
     };
 
-    xhr.open("POST", "/validateTitle");
+    xhr.open("POST", "/titleIsAvailable");
     xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
     xhr.send("title="+title.value+"&docid="+document.getElementById("docidbox").value);
   }
