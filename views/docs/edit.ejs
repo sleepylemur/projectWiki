@@ -12,28 +12,67 @@
   <ul>
     <li><label for="title">title</label><input id="titlebox" type="text" name="title" value="<%= title %>" onchange="validateTitle()"></li>
     <li><label for="uniquetitle">is unique</label><input id="uniquetitlebox" type="checkbox" disabled></li>
-    <li><label for="body">body</label><textarea name="body"><%= body %></textarea></li>
+    
+    <li><label for="layout">layout</label>
+      <select id="layoutselect" name="layout" onchange="addremoveContentFields()">
+      <% layouts.forEach(function(layout) { %>
+        <option value="<%= layout.name %>"<% if (layout.name === layoutname) { %> selected<% } %>><%= layout.name %></option>
+      <% }); %>
+      </select>
+      <input id="numpanes" type="hidden" name="numpanes" value="<%= numpanes %>">
+    </li>
 
+    <ul id="ul_content">
+    <% var contents = JSON.parse(body); %>
+    <% for (var i=0; i<numpanes; i++) { %>
+
+      <li id="li_content<%= i %>"><label for="content<%= i %>">content <%= i %></label><textarea name="content<%= i %>" rows="15" cols="60"><%= contents[i] %></textarea></li>
+
+    <% } %>
+    </ul>
     <li><button type="submit">submit</button></li>
 
     <input id="docidbox" type="hidden" name="docid" value="<%= docid %>">
   </ul>
 </form>
-
-<ul>
-<% gadgets.forEach( function(gadget) { %>
-<li><form action="/doc/<%= docid %>/version/<%= version %>/partials" method="POST">
-  <textarea name="body"><%= gadget.body %></textarea>
-  <select name="style">
-  <% styles.forEach( function(style) { %>
-    <option value="<%= style.name %>"><%= style.name %></option>
-  <% }); %>
-  </select>
-</form></li>
-<% } %>
-</ul>
   
 <script>
+  var layouts = <%- JSON.stringify(layouts) %>;
+  function addremoveContentFields() {
+    var layoutname = document.getElementById("layoutselect").value;
+    for (var i=0; i<layouts.length && layouts[i].name != layoutname; i++) {
+      ;
+    }
+    var numpanes = Number(layouts[i].numpanes);
+    var numpanesbox = document.getElementById("numpanes");
+    var curnumpanes = Number(numpanesbox.value);
+
+    if (numpanes !== curnumpanes) {
+      var ul = document.getElementById("ul_content");
+      while (curnumpanes < numpanes) {
+        var li = document.createElement("li");
+        li.id = "li_content"+curnumpanes;
+        var label = document.createElement("label");
+        label.for = "content"+curnumpanes;
+        label.appendChild(document.createTextNode("content "+curnumpanes));
+        var textarea = document.createElement("textarea");
+        textarea.name = "content"+curnumpanes;
+        textarea.rows = "15";
+        textarea.cols = "60";
+        li.appendChild(label);
+        li.appendChild(textarea);
+        ul.appendChild(li);
+        curnumpanes = 1+curnumpanes;
+      }
+      while (curnumpanes > numpanes) {
+        curnumpanes -= 1;
+        var li = document.getElementById("li_content"+curnumpanes);
+        ul.removeChild(li);
+      }
+
+      numpanesbox.value = curnumpanes;
+    }
+  }
   function testSubmit() {
     if (document.getElementById("uniquetitlebox").checked) {
       return true;

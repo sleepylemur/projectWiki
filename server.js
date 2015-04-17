@@ -5,6 +5,7 @@ var session = require('express-session');
 var override = require('method-override');
 var bodyParser = require('body-parser');
 var MongoStore = require('connect-mongo')(session);
+var mustache = require('mustache');
 
 
 
@@ -78,18 +79,23 @@ app.get("/", function (req,res) {
 });
 
 app.get("/docs", function (req,res) {
-  db.all("SELECT title,docs.docid,docs.version FROM docs JOIN versionedDocs ON docs.docid = versionedDocs.docid AND docs.version = versionedDocs.version", function(err,data) {
-    if (err) throw(err);
-    ensureUser(req);
-    req.session.user.curpage = req.originalUrl;
-    res.render("docs/index.ejs",{docs: data, user: req.session.user});
-  });
+  res.redirect("doc/main");
+  // db.all("SELECT title,docs.docid,docs.version FROM docs JOIN versionedDocs ON docs.docid = versionedDocs.docid AND docs.version = versionedDocs.version", function(err,data) {
+  //   if (err) throw(err);
+  //   ensureUser(req);
+  //   req.session.user.curpage = req.originalUrl;
+  //   res.render("docs/index.ejs",{docs: data, user: req.session.user});
+  // });
 });
 
 
 // retrieve doc by title
 app.get("/doc/:title", function (req,res) {
-  db.get("SELECT title,body FROM versionedDocs JOIN docs ON docs.docid = versionedDocs.docid AND docs.version = versionedDocs.version WHERE title = ?",
+  db.get( "SELECT title,body,html,css,numpanes FROM"+
+          " versionedDocs"+
+          " JOIN docs ON docs.docid = versionedDocs.docid AND docs.version = versionedDocs.version"+
+          " JOIN layouts ON versionedDocs.layout = layouts.name"+
+          " WHERE title = ?",
     req.params.title,
     function(err,data) {
       if (err) throw(err);
@@ -98,8 +104,17 @@ app.get("/doc/:title", function (req,res) {
       } else {
         ensureUser(req);
         req.session.user.curpage = req.originalUrl;
-        parseTags(data.body, keywords, function(text) {
-          res.render("docs/show.ejs",{title: data.title, body: marked(text), user: req.session.user});
+        parseTagsInArray(JSON.parse(data.body), keywords, function(arr) {
+          var contents = {title: req.params.title};
+          for (var i=0; i<arr.length; i++) {
+            contents["content"+i] = marked(arr[i]);
+          }
+          // console.log(mustache.render(data['html'],contents));
+          res.render("docs/show.ejs",{
+            title: data.title,
+            content: mustache.render(data.html,contents),
+            css:data.css,
+            user: req.session.user});
         });
         // res.render("docs/show.ejs",{title: data.title, body: marked(parseTags(data.body, keywords)), user: req.session.user});
       }
@@ -111,35 +126,60 @@ app.get("/doc/:title", function (req,res) {
 
 // retrieve new doc form. uses same form as editpage
 app.get("/docs/new", function (req,res) {
-  res.render("docs/edit.ejs", {formaction: "/docs", docid:0, title: "untitled", body: "", user: req.session.user});
+  db.all("SELECT name,numpanes FROM layouts", function (err,data) {
+    if (err) throw(err);
+    res.render("docs/edit.ejs", {formaction: "/docs", docid:0, title: "untitled", layout: "plain", body: '[""]', layouts: data, user: req.session.user});
+  });
 });
 
 // retrieve edit page for doc
 app.get("/doc/:title/edit", function (req,res) {
-  db.get("SELECT title,body,docs.docid FROM versionedDocs JOIN docs ON docs.docid = versionedDocs.docid AND docs.version = versionedDocs.version WHERE title = ?",
+  db.get( "SELECT title,body,docs.docid,numpanes,name "+
+          "FROM versionedDocs "+
+          "JOIN docs ON docs.docid = versionedDocs.docid AND docs.version = versionedDocs.version "+
+          "JOIN layouts ON versionedDocs.layout = layouts.name "+
+          "WHERE title = ?",
     req.params.title,
     function(err,data) {
       if (err) throw(err);
       if (typeof data === "undefined") {
         res.send(req.params.title + " not found.");
       } else {
-        ensureUser(req);
-        req.session.user.curpage = req.originalUrl;
-        res.render("docs/edit.ejs",{formaction: "/doc/"+data.docid, docid: data.docid, title: data.title, body: data.body, user: req.session.user});
+        db.all("SELECT name,numpanes FROM layouts", function(err,layouts) {
+          ensureUser(req);
+          req.session.user.curpage = req.originalUrl;
+          res.render("docs/edit.ejs",{
+            formaction: "/doc/"+data.docid,
+            docid: data.docid,
+            title: data.title,
+            body: data.body,
+            layoutname: data.name,
+            numpanes: data.numpanes,
+            user: req.session.user,
+            layouts: layouts});
+        });
       }
     });
 });
 
 // update doc docid.
 app.post("/doc/:docid", function (req,res) {
-  db.get("SELECT max(version) FROM versionedDocs WHERE docid = ?", req.params.docid, function (err,data) {
+  db.get("SELECT max(version),title FROM versionedDocs WHERE docid = ?", req.params.docid, function (err,data) {
     if (err) throw(err);
     if (typeof data === "undefined") { // maybe create a new entry here.
       res.send("oops! couldn't find the doc to update");
     } else {
       version = data["max(version)"] + 1;
-      db.run("INSERT INTO versionedDocs (docid,title,body,version,userid,changed) VALUES (?,?,?,?,?,strftime('%s','now'))",
-        req.params.docid, req.body.title, req.body.body, version, "guest",
+      // console.log(req.body);
+      var content=[];
+      for (var i=0; i<req.body.numpanes; i++) {
+        content.push(req.body["content"+i]);
+      }
+      ensureUser(req);
+      var newtitle = req.body.title;
+      if (data.title === "main") newtitle = data.title; // disable renaming the main page
+      db.run("INSERT INTO versionedDocs (docid,title,layout,body,version,userid,changed) VALUES (?,?,?,?,?,?,strftime('%s','now'))",
+        req.params.docid, newtitle, req.body.layout, JSON.stringify(content), version, req.session.user.username,
         function (err) {
           if (err) throw(err);
           db.run("UPDATE docs SET version = ? WHERE docid = ?", version, req.params.docid, function (err) {
@@ -229,6 +269,22 @@ function keywords(text,next) {
     }
   } else {
     next("["+text+"]("+text+")"); // markdown link to doctitle
+  }
+}
+
+// call parseTags repeatedly and pass an array of the results to next
+function parseTagsInArray(arr,callback,next) {
+  var results = [];
+  parseit(0);
+  function parseit(i) {
+    if (i < arr.length) {
+      parseTags(arr[i], callback, function(text) {
+        results.push(text);
+        parseit(i+1);
+      });
+    } else {
+      next(results);
+    }
   }
 }
 
