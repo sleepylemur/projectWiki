@@ -13,11 +13,25 @@
     <li><label for="title">title</label><input id="titlebox" type="text" name="title" value="<%= title %>" onchange="validateTitle()"></li>
     <li><label for="uniquetitle">is unique</label><input id="uniquetitlebox" type="checkbox" disabled></li>
     <li><label for="body">body</label><textarea name="body"><%= body %></textarea></li>
+
     <li><button type="submit">submit</button></li>
 
     <input id="docidbox" type="hidden" name="docid" value="<%= docid %>">
   </ul>
 </form>
+
+<ul>
+<% gadgets.forEach( function(gadget) { %>
+<li><form action="/doc/<%= docid %>/version/<%= version %>/partials" method="POST">
+  <textarea name="body"><%= gadget.body %></textarea>
+  <select name="style">
+  <% styles.forEach( function(style) { %>
+    <option value="<%= style.name %>"><%= style.name %></option>
+  <% }); %>
+  </select>
+</form></li>
+<% } %>
+</ul>
   
 <script>
   function testSubmit() {
