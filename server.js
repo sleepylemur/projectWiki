@@ -7,7 +7,6 @@ var bodyParser = require('body-parser');
 var MongoStore = require('connect-mongo')(session);
 
 
-parseTags("hay [[third doc]] [\\[hi]\\]", keywords, function(text) {console.log(text);});
 
 // ***********************************   initialization stuff   ***********************************
 
@@ -208,14 +207,25 @@ function ensureUser(req) {
 
 function keywords(text,next) {
   if (text.charAt(0) === '!') {
-    var func = text.substring(1).trim();
-    if (func === 'alldocs') {
-      db.all("SELECT title FROM docs JOIN versionedDocs ON docs.docid = versionedDocs.docid AND docs.version = versionedDocs.version", function (err,data) {
-        if (err) throw(err);
-        next(data.map(function(row) {return "- ["+row.title+"]("+row.title+")";}).join('\n'));
-      });
+    var func = text.substring(1).trim().replace(/\s+/g," ").split(' ');
+    if (func.length > 0) {
+      var args = func.slice(1);
+      if (func[0] === 'alldocs') {
+        db.all("SELECT title FROM docs JOIN versionedDocs ON docs.docid = versionedDocs.docid AND docs.version = versionedDocs.version", function (err,data) {
+          if (err) throw(err);
+          next(data.map(function(row) {return "- ["+row.title+"]("+row.title+")";}).join('\n'));
+        });
+      } else if (func[0] === 'recentdocs') {
+        var limit = args.length>0 ? args[0] : 10;
+        db.all("SELECT title FROM docs JOIN versionedDocs ON docs.docid = versionedDocs.docid AND docs.version = versionedDocs.version ORDER BY versionedDocs.changed DESC LIMIT ?",limit , function (err,data) {
+          if (err) throw(err);
+          next(data.map(function(row) {return "- ["+row.title+"]("+row.title+")";}).join('\n'));
+        });
+      } else {
+        next("unknown function: "+func);
+      }
     } else {
-      next("unknown function: "+func);
+      next("");
     }
   } else {
     next("["+text+"]("+text+")"); // markdown link to doctitle
@@ -261,7 +271,6 @@ function parseTags(string,callback,next) {
         else {tags[tags.length-1].text += string.charAt(i);}
         break;
       case 3: //inside tag backslashed
-        console.log("test"+i);
         state = 2;
         tags[tags.length-1].text += string.charAt(i);
         break;
