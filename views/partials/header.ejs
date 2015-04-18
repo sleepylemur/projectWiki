@@ -1,10 +1,53 @@
-<h1>wikilicious</h1>
-<a href="/docs">list of docs</a>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Document</title>
+  <link href='http://fonts.googleapis.com/css?family=Orbitron:900' rel='stylesheet' type='text/css'>
+
+  <style>
+    /** * Eric Meyer's Reset CSS v2.0 (http://meyerweb.com/eric/tools/css/reset/) * http://cssreset.com */html, body, div, span, applet, object, iframe, pre,a, abbr, acronym, address, big, cite, code,del, dfn, em, img, ins, kbd, q, s, samp,small, strike, strong, sub, sup, tt, var,b, u, i, center,dl, dt, dd, ol, ul, li,fieldset, form, label, legend,table, caption, tbody, tfoot, thead, tr, th, td,article, aside, canvas, details, embed, figure, figcaption, footer, header, hgroup, menu, nav, output, ruby, section, summary,time, mark, audio, video {  margin: 0;  padding: 0; border: 0;  font-size: 100%;  font: inherit;  vertical-align: baseline;}/* HTML5 display-role reset for older browsers */article, aside, details, figcaption, figure, footer, header, hgroup, menu, nav, section {  display: block;}body {  line-height: 1;}ol, ul {  list-style: none;}blockquote, q { quotes: none;}blockquote:before, blockquote:after,q:before, q:after { content: '';  content: none;}table {  border-collapse: collapse;  border-spacing: 0;}
+
+    .logo {
+      font-family: 'Orbitron', sans-serif;
+      color: blue;
+      background: black;
+      height: 2em;
+      font-size: 40px;
+      padding:1em;
+    }
+    p {
+      line-height: 140%;
+    }
+    li {
+      margin-left: 1em;
+    }
+    .linkbox {
+      float: right;
+      display: inline-block;
+      border: 1px solid black;
+      padding: 5px 20px;
+      font-style: normal;
+      font-size: 20px;
+    }
+    <%= css %>
+  </style>
+</head>
+<body>
+
+<div class="logo">projectWIKI</div>
+
+<span class="linkbox">
+<a href="/doc/main">main</a>
 <a href="/docs/new">new</a>
+<% if (title != "") { %><a href="/doc/<%= title %>/edit">edit</a><% } %>
+</span>
+<span class="linkbox">
 <% if (user.username === "guest") { %>
   <a href="/users/new">create new account</a>
   <a href="/users/login">login</a>
 <% } else { %>
   <a href="/users/logout">logout</a>
 <% } %>
-<p>user: <%= JSON.stringify(user) %></p>
+</span>
+<!-- <p>user: <%= JSON.stringify(user) %></p> -->

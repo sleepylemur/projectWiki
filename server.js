@@ -6,7 +6,13 @@ var override = require('method-override');
 var bodyParser = require('body-parser');
 var MongoStore = require('connect-mongo')(session);
 var mustache = require('mustache');
+var fs = require('fs');
 
+var formcss;
+fs.readFile("./public/formcss.css", function(err,data) {
+  if (err) throw(err);
+  formcss = data.toString();
+});
 
 
 // ***********************************   initialization stuff   ***********************************
@@ -38,11 +44,11 @@ app.use(bodyParser.urlencoded({
 // *********************************** users routes ***********************************
 
 app.get("/users/new", function (req,res) {
-  res.render("users/edit.ejs", {formaction: "/users", user: req.session.user});
+  res.render("users/edit.ejs", {formaction: "/users", user: req.session.user, css: formcss, title: ""});
 });
 
 app.get("/users/login", function (req,res) {
-  res.render("users/login.ejs");
+  res.render("users/login.ejs", {css: formcss, title: ""});
 });
 
 app.post("/users/login", function (req,res) {
@@ -75,7 +81,7 @@ function replaceKeywords(text) {
 
 // retrieve index of docs
 app.get("/", function (req,res) {
-  res.redirect("/docs");
+  res.redirect("doc/main");
 });
 
 app.get("/docs", function (req,res) {
@@ -128,7 +134,17 @@ app.get("/doc/:title", function (req,res) {
 app.get("/docs/new", function (req,res) {
   db.all("SELECT name,numpanes FROM layouts", function (err,data) {
     if (err) throw(err);
-    res.render("docs/edit.ejs", {formaction: "/docs", docid:0, title: "untitled", layout: "plain", body: '[""]', layouts: data, user: req.session.user});
+    res.render("docs/edit.ejs", {
+      formaction: "/docs",
+      docid:0,
+      title: "untitled",
+      body: '[""]',
+      layoutname: data[0].name,
+      numpanes: data[0].numpanes,
+      user: req.session.user,
+      layouts: data,
+      css: formcss
+    });
   });
 });
 
@@ -156,7 +172,8 @@ app.get("/doc/:title/edit", function (req,res) {
             layoutname: data.name,
             numpanes: data.numpanes,
             user: req.session.user,
-            layouts: layouts});
+            layouts: layouts,
+            css: formcss});
         });
       }
     });
@@ -176,10 +193,9 @@ app.post("/doc/:docid", function (req,res) {
         content.push(req.body["content"+i]);
       }
       ensureUser(req);
-      var newtitle = req.body.title;
-      if (data.title === "main") newtitle = data.title; // disable renaming the main page
+      if (data.title === "main") req.body.title = data.title; // disable renaming the main page
       db.run("INSERT INTO versionedDocs (docid,title,layout,body,version,userid,changed) VALUES (?,?,?,?,?,?,strftime('%s','now'))",
-        req.params.docid, newtitle, req.body.layout, JSON.stringify(content), version, req.session.user.username,
+        req.params.docid, req.body.title, req.body.layout, JSON.stringify(content), version, req.session.user.username,
         function (err) {
           if (err) throw(err);
           db.run("UPDATE docs SET version = ? WHERE docid = ?", version, req.params.docid, function (err) {
@@ -202,6 +218,50 @@ app.post("/docs", function (req,res) {
         res.redirect("/doc/"+req.body.title);
       });
   });
+});
+
+
+// *********************************** layout edit routes ***********************************
+
+app.get("/layout/:name/edit", function (req,res) {
+  db.get("SELECT name,numpanes,html,css FROM layouts WHERE name = ?", req.params.name, function(err,data) {
+    if (err) throw(err);
+    res.render("layouts/edit.ejs", {msg: "", name:data.name, oldname:data.name, numpanes:data.numpanes, html:data.html, cssdata: data.css, css: formcss, user: req.session.user, title: ""});
+  });
+});
+
+app.put("/layout/:name", function(req,res) {
+  if (req.params.name === "plain" && req.body.name !== "plain") {
+    // if somebody tries to rename "plain" layout bounce them back to the edit form
+    res.render("layouts/edit.ejs", {msg: "Can't rename \"plain\" layout.", name:"plain", oldname:req.params.name, numpanes:req.body.numpanes, html:req.body.html, cssdata:req.body.css, css: formcss, user: req.session.user, title: ""});
+  } else {
+    if (req.params.name !== req.body.name) { //we are trying to rename a layout, so make sure it isn't in use by somebody else
+      db.get("SELECT name FROM layouts WHERE name = ?", req.body.name, function(err,data) {
+        if (err) throw(err);
+        if (typeof data === 'undefined') {
+          //name isn't in use so go ahead and update
+          doupdate();
+        } else {
+          //name is in use, so go back to the edit form
+          res.render(
+            "layouts/edit.ejs",
+            {msg: "That name is in use by another layout", name:req.body.name, oldname:req.params.name, numpanes:req.body.numpanes, html:req.body.html, cssdata:req.body.css, css: formcss, user: req.session.user, title: ""}
+          );
+        }
+      });
+    } else {
+      doupdate();
+    }
+    function doupdate() {
+      db.run("UPDATE layouts SET name=?, html=?, numpanes=?, css=? WHERE name=?",
+        req.body.name, req.body.html, req.body.numpanes, req.body.css, req.params.name,
+        function(err) {
+          if (err) throw(err);
+          res.redirect("/doc/main");
+        }
+      );
+    }
+  }
 });
 
 
@@ -260,6 +320,11 @@ function keywords(text,next) {
         db.all("SELECT title FROM docs JOIN versionedDocs ON docs.docid = versionedDocs.docid AND docs.version = versionedDocs.version ORDER BY versionedDocs.changed DESC LIMIT ?",limit , function (err,data) {
           if (err) throw(err);
           next(data.map(function(row) {return "- ["+row.title+"]("+row.title+")";}).join('\n'));
+        });
+      } else if (func[0] === 'alllayouts') {
+        db.all("SELECT name FROM layouts", function(err,data){
+          if (err) throw(err);
+          next(data.map(function(row) {return "- ["+row.name+"](/layout/"+row.name+"/edit)";}).join('\n'));
         });
       } else {
         next("unknown function: "+func);
