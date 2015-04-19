@@ -6,7 +6,9 @@ var override = require('method-override');
 var bodyParser = require('body-parser');
 var MongoStore = require('connect-mongo')(session);
 var mustache = require('mustache');
+var request = require('request');
 var fs = require('fs');
+var secrets = require('./secrets.json');
 
 var formcss;
 fs.readFile("./public/formcss.css", function(err,data) {
@@ -326,6 +328,28 @@ function keywords(text,next) {
           if (err) throw(err);
           next(data.map(function(row) {return "- ["+row.name+"](/layout/"+row.name+"/edit)";}).join('\n'));
         });
+      } else if (func[0] === 'instagram' && args.length > 0) {
+        var url = "https://api.instagram.com/v1/tags/" + args.join('+') + "/media/recent?client_id=" + secrets.instagram.apikey;
+        try {
+          request(url, function(err,response,body) {
+            if (err) {
+              next("instagram error: "+err);
+            } else {
+              var imgurl = "";
+              body = JSON.parse(body);
+              for (var i=0; i<body.data.length && imgurl.length===0; i++) {
+                if (body.data[i].type === "image") imgurl = body.data[i].images.low_resolution.url;
+              }
+              if (imgurl === "" ) {
+                next("instagram no image");
+              } else {
+                next("!["+func+" "+args.join(" ")+"]("+imgurl+")");
+              }
+            }
+          });
+        } catch (err) {
+          next("err thrown: "+err);
+        }
       } else {
         next("unknown function: "+func);
       }
