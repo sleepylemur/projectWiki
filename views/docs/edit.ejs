@@ -1,4 +1,5 @@
 <% include ../partials/header %>
+<a href="/doc/<%= docid %>/history">show history</a>
 
 <form action=<%= formaction %> method="POST" onsubmit="return testSubmit()">
   <ul>
@@ -21,12 +22,21 @@
       <li id="li_content<%= i %>"><label for="content<%= i %>">content <%= i %></label><textarea name="content<%= i %>" rows="15" cols="60"><%= contents[i] %></textarea></li>
 
     <% } %>
+
+      <li><label for="comment">comments</label><textarea name="comment" rows="3" cols="60"><%= comment %></textarea></li>
     </ul>
     <li><button type="submit">submit</button></li>
 
     <input id="docidbox" type="hidden" name="docid" value="<%= docid %>">
   </ul>
+
 </form>
+
+<% if (formaction !== "/docs") { %> <!-- ugly way to check if this is a new form or edit form -->
+<form action="/doc/<%= docid %>?_method=DELETE" method="POST">
+<button type="submit">delete</button>
+</form>
+<% } %>
   
 <script>
   var layouts = <%- JSON.stringify(layouts) %>;

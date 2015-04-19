@@ -46,11 +46,11 @@ app.use(bodyParser.urlencoded({
 // *********************************** users routes ***********************************
 
 app.get("/users/new", function (req,res) {
-  res.render("users/edit.ejs", {formaction: "/users", user: req.session.user, css: formcss, title: ""});
+  res.render("users/edit.ejs", {formaction: "/users", user: req.session.user, css: formcss, title: "", editable: false});
 });
 
 app.get("/users/login", function (req,res) {
-  res.render("users/login.ejs", {css: formcss, title: ""});
+  res.render("users/login.ejs", {css: formcss, title: "", editable: false});
 });
 
 app.post("/users/login", function (req,res) {
@@ -122,7 +122,8 @@ app.get("/doc/:title", function (req,res) {
             title: data.title,
             content: mustache.render(data.html,contents),
             css:data.css,
-            user: req.session.user});
+            user: req.session.user,
+            editable: true});
         });
         // res.render("docs/show.ejs",{title: data.title, body: marked(parseTags(data.body, keywords)), user: req.session.user});
       }
@@ -141,11 +142,13 @@ app.get("/docs/new", function (req,res) {
       docid:0,
       title: "untitled",
       body: '[""]',
+      comment: "created",
       layoutname: data[0].name,
       numpanes: data[0].numpanes,
       user: req.session.user,
       layouts: data,
-      css: formcss
+      css: formcss,
+      editable: false
     });
   });
 });
@@ -171,11 +174,13 @@ app.get("/doc/:title/edit", function (req,res) {
             docid: data.docid,
             title: data.title,
             body: data.body,
+            comment: "updated",
             layoutname: data.name,
             numpanes: data.numpanes,
             user: req.session.user,
             layouts: layouts,
-            css: formcss});
+            css: formcss,
+            editable: false});
         });
       }
     });
@@ -196,8 +201,8 @@ app.post("/doc/:docid", function (req,res) {
       }
       ensureUser(req);
       if (data.title === "main") req.body.title = data.title; // disable renaming the main page
-      db.run("INSERT INTO versionedDocs (docid,title,layout,body,version,userid,changed) VALUES (?,?,?,?,?,?,strftime('%s','now'))",
-        req.params.docid, req.body.title, req.body.layout, JSON.stringify(content), version, req.session.user.username,
+      db.run("INSERT INTO versionedDocs (docid,title,layout,body,version,userid,changed,comment) VALUES (?,?,?,?,?,?,strftime('%s','now'),?)",
+        req.params.docid, req.body.title, req.body.layout, JSON.stringify(content), version, req.session.user.username, req.body.comment,
         function (err) {
           if (err) throw(err);
           db.run("UPDATE docs SET version = ? WHERE docid = ?", version, req.params.docid, function (err) {
@@ -209,12 +214,20 @@ app.post("/doc/:docid", function (req,res) {
   });
 });
 
+// delete doc by title
+app.delete("/doc/:docid", function(req,res) {
+  db.run("DELETE FROM docs WHERE docid = ?", req.params.docid, function(err) {
+    if (err) throw(err);
+    res.redirect("/doc/main");
+  });
+});
+
 // add new doc
 app.post("/docs", function (req,res) {
   db.run("INSERT INTO docs (version) VALUES (1)", function (err) {
     if (err) throw(err);
-    db.run("INSERT INTO versionedDocs (docid, title, body, version, userid, changed) VALUES (?,?,?,?,?,strftime('%s','now'))",
-      this.lastID, req.body.title, req.body.body, 1, "guest",
+    db.run("INSERT INTO versionedDocs (docid, title, body, version, userid, changed) VALUES (?,?,?,?,?,strftime('%s','now'),?)",
+      this.lastID, req.body.title, req.body.body, 1, req.session.user.username, req.body.comment, 
       function (err) {
         if (err) throw(err);
         res.redirect("/doc/"+req.body.title);
@@ -222,20 +235,60 @@ app.post("/docs", function (req,res) {
   });
 });
 
+// *********************************** doc history routes ***********************************
+
+app.get("/doc/:docid/history", function (req,res) {
+  db.all("SELECT title,userid,datetime(changed,'unixepoch') as time,comment,docid,version FROM versionedDocs WHERE docid = ?", req.params.docid, function(err,data) {
+    if (err) throw(err);
+    if (data.length === 0) {
+      res.send("doc not found");
+    } else {
+      res.render("docs/history.ejs", {
+        title: "History",
+        history: data,
+        user: req.session.user,
+        css: formcss,
+        editable: false}
+      );
+    }
+  });
+});
+
+//docid INTEGER, title TEXT, layout TEXT, body TEXT, version INTEGER, userid INTEGER, changed INTEGER, comment TEXT
+
+app.post("/doc/:docid/revert/:version", function(req,res) {
+  db.get("SELECT max(version) as version FROM versionedDocs WHERE docid = ?", req.params.docid, function(err,versiondata) {
+    if (err) throw(err);
+    var version = Number(versiondata.version) + 1;
+    db.run("INSERT INTO versionedDocs (docid, title, layout, body, version, userid, changed, comment) "+
+      "SELECT docid, title, layout, body, ?, userid, strftime('%s','now'), ? "+
+      "FROM versionedDocs WHERE docid = ? AND version = ?",
+      version, "reverted to version "+req.params.version, req.params.docid, req.params.version, function(err) {
+        if (err) throw(err);
+        db.get("SELECT max(version) as version, title FROM versionedDocs WHERE docid = ?", req.params.docid, function(err,data) {
+          if (err) throw(err);
+          db.run("UPDATE docs SET version = ? WHERE docid = ?", data.version, req.params.docid, function(err) {
+            if (err) throw(err);
+            res.redirect("/doc/"+data.title);
+          });
+        });
+      });
+  });
+});
 
 // *********************************** layout edit routes ***********************************
 
 app.get("/layout/:name/edit", function (req,res) {
   db.get("SELECT name,numpanes,html,css FROM layouts WHERE name = ?", req.params.name, function(err,data) {
     if (err) throw(err);
-    res.render("layouts/edit.ejs", {msg: "", name:data.name, oldname:data.name, numpanes:data.numpanes, html:data.html, cssdata: data.css, css: formcss, user: req.session.user, title: ""});
+    res.render("layouts/edit.ejs", {msg: "", name:data.name, oldname:data.name, numpanes:data.numpanes, html:data.html, cssdata: data.css, css: formcss, user: req.session.user, title: "", editable: false});
   });
 });
 
 app.put("/layout/:name", function(req,res) {
   if (req.params.name === "plain" && req.body.name !== "plain") {
     // if somebody tries to rename "plain" layout bounce them back to the edit form
-    res.render("layouts/edit.ejs", {msg: "Can't rename \"plain\" layout.", name:"plain", oldname:req.params.name, numpanes:req.body.numpanes, html:req.body.html, cssdata:req.body.css, css: formcss, user: req.session.user, title: ""});
+    res.render("layouts/edit.ejs", {msg: "Can't rename \"plain\" layout.", name:"plain", oldname:req.params.name, numpanes:req.body.numpanes, html:req.body.html, cssdata:req.body.css, css: formcss, user: req.session.user, title: "", editable: false});
   } else {
     if (req.params.name !== req.body.name) { //we are trying to rename a layout, so make sure it isn't in use by somebody else
       db.get("SELECT name FROM layouts WHERE name = ?", req.body.name, function(err,data) {
@@ -247,7 +300,7 @@ app.put("/layout/:name", function(req,res) {
           //name is in use, so go back to the edit form
           res.render(
             "layouts/edit.ejs",
-            {msg: "That name is in use by another layout", name:req.body.name, oldname:req.params.name, numpanes:req.body.numpanes, html:req.body.html, cssdata:req.body.css, css: formcss, user: req.session.user, title: ""}
+            {msg: "That name is in use by another layout", name:req.body.name, oldname:req.params.name, numpanes:req.body.numpanes, html:req.body.html, cssdata:req.body.css, css: formcss, user: req.session.user, title: "", editable: false}
           );
         }
       });

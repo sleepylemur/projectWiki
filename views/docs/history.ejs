@@ -1,0 +1,25 @@
+<% include ../partials/header %>
+
+<table>
+  <thead>
+    <tr>
+      <td>title
+      <td>user
+      <td>comment
+      <td>when
+
+  <tbody>
+<% history.forEach(function(row){ %>
+
+    <tr>
+      <td><%= row.title %>
+      <td><%= row.userid %>
+      <td><%= row.comment %>
+      <td><%= row.time %>
+      <td><form method="POST" action="/doc/<%= row.docid %>/revert/<%= row.version %>"><button type="submit">revert</button></form>
+
+<% }); %>
+</table>
+
+</body>
+</html>
