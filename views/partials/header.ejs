@@ -31,7 +31,7 @@
   <a href="/users/new">create new account</a>
   <a href="/users/login">login</a>
 <% } else { %>
-  <%= user.username %>
+  <a href="/user/<%= user.username %>"><%= user.username %></a>
   <a href="/users/logout">logout</a>
 <% } %>
 </span>

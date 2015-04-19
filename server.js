@@ -8,7 +8,16 @@ var MongoStore = require('connect-mongo')(session);
 var mustache = require('mustache');
 var request = require('request');
 var fs = require('fs');
+var nodemailer = require('nodemailer');
+var smtpTransport = require('nodemailer-smtp-transport');
 var secrets = require('./secrets.json');
+
+// set up transporter to send email via mandrill's smtp server
+var transporter = nodemailer.createTransport(smtpTransport({
+  host: "smtp.mandrillapp.com",
+  port: 587,
+  auth: secrets.mandrill //{user: username, pass: apikey}
+}));
 
 var formcss;
 fs.readFile("./public/formcss.css", function(err,data) {
@@ -43,20 +52,26 @@ app.use(bodyParser.urlencoded({
 }));
 
 
-// *********************************** users routes ***********************************
+// *********************************** user login routes ***********************************
 
 app.get("/users/new", function (req,res) {
-  res.render("users/edit.ejs", {formaction: "/users", user: req.session.user, css: formcss, title: "", editable: false});
+  res.render("users/edit.ejs", {formaction: "/users", msg:"", name:"", email:"", username:"", user: req.session.user, css: formcss, title: "new account", editable: false});
 });
 
 app.get("/users/login", function (req,res) {
-  res.render("users/login.ejs", {css: formcss, title: "", editable: false});
+  res.render("users/login.ejs", {msg: "", css: formcss, title: "", editable: false});
 });
 
 app.post("/users/login", function (req,res) {
   ensureUser(req);
-  req.session.user.username = req.body.username;
-  res.redirect(req.session.user.curpage);
+  db.get("SELECT username FROM users WHERE username = ?", req.body.username, function(err,data) {
+    if (typeof data === 'undefined') {
+      res.render("users/login.ejs", {msg: "username "+req.body.username+" does not exist in our database", css: formcss, title: "", editable: false});
+    } else {
+      req.session.user.username = req.body.username;
+      res.redirect(req.session.user.curpage);
+    }
+  });
 });
 
 app.get("/users/logout", function (req,res) {
@@ -67,16 +82,69 @@ app.get("/users/logout", function (req,res) {
 
 app.post("/users", function (req,res) {
   ensureUser(req);
-  req.session.user.username = req.body.username;
-  res.redirect(req.session.user.curpage);
-  // res.redirect(req.session.curpage);
+  db.get("SELECT username FROM users WHERE username = ?",req.body.username, function(err,data) {
+    if (typeof data !== 'undefined') {
+      res.redirect("users/edit.ejs", {formaction: "/users", msg:"that username is taken", name:req.body.name, email:req.body.email, username:req.body.username, user: req.session.user, css: formcss, title: "new account", editable: false});
+    } else {
+      db.run("INSERT INTO users (name,email,username) VALUES (?,?,?)", req.body.name, req.body.email, req.body.username,
+        function(err,data) {
+          req.session.user.username = req.body.username;
+          res.redirect(req.session.user.curpage);
+        }
+      );
+    }
+  });
 });
 
-// currently only replaces [[title]] with the markdown version [title](title)
-function replaceKeywords(text) {
-  text = text.replace(/\[\[(.*?)\]\]/g, "[$1]($1)");
-  return text;
-}
+
+// *********************************** user profile routes ***********************************
+
+app.get("/user/:username", function(req,res) {
+  db.all("SELECT docid,title,max(version) FROM versionedDocs WHERE docid IN "+
+    "(SELECT DISTINCT docid FROM versionedDocs WHERE userid = ?) "+
+    "GROUP BY docid", req.params.username, function(err,data) {
+      var titles = data.map(function(row) {return row.title;});
+      db.all("SELECT subscriptions.docid as docid, title "+
+        "FROM subscriptions "+
+        "JOIN docs ON subscriptions.docid = docs.docid "+
+        "JOIN versionedDocs ON docs.docid = versionedDocs.docid AND docs.version = versionedDocs.version "+
+        "WHERE subscriptions.username = ?", req.params.username,
+        function(err,subdata) {
+          res.render("users/show.ejs", {profilename: req.params.username, titles: titles, subscriptions: subdata, user: req.session.user, css: formcss, title: req.params.username + "'s Profile", editable: false});
+        }
+      );
+    }
+  );
+});
+
+// *********************************** user subscriptions ***********************************
+
+app.post("/doc/:docid/subscribe", function(req,res) {
+  ensureUser(req);
+  if (req.session.username !== "guest") {
+    db.run("INSERT INTO subscriptions (username, docid) VALUES (?,?)", req.session.user.username, req.params.docid, function(err) {
+      if (err) throw(err);
+      db.get("SELECT title FROM versionedDocs "+
+        "JOIN docs ON docs.docid = versionedDocs.docid AND docs.version = versionedDocs.version "+
+        "WHERE docs.docid = ?", req.params.docid, function(err,data) {
+          if (err) throw(err);
+          if (typeof data === 'undefined') res.send("doc not found");
+          else res.redirect("/doc/"+data.title);
+        }
+      );
+    });
+  } else {
+    res.send("please login before you subscribe");
+  }
+});
+
+app.delete("/subscription/:username/:docid", function(req,res) {
+  db.run("DELETE FROM subscriptions WHERE username = ? AND docid = ?", req.params.username, req.params.docid, function(err) {
+    if (err) throw(err);
+    res.redirect("/user/"+req.params.username);
+  });
+});
+
 
 
 // *********************************** doc reading routes ***********************************
@@ -208,8 +276,10 @@ app.post("/doc/:docid", function (req,res) {
           db.run("UPDATE docs SET version = ? WHERE docid = ?", version, req.params.docid, function (err) {
             if (err) throw(err);
             res.redirect("/doc/"+req.body.title);
+            notifySubscribers(req.params.docid, req.body.title, req.body.comment, req.session.user.username);
           });
-        });
+        }
+      );
     }
   });
 });
@@ -224,10 +294,14 @@ app.delete("/doc/:docid", function(req,res) {
 
 // add new doc
 app.post("/docs", function (req,res) {
+  var content = [];
+  for (var i=0;i<req.body.numpanes; i++) {
+    content.push(req.body["content"+i]);
+  }
   db.run("INSERT INTO docs (version) VALUES (1)", function (err) {
     if (err) throw(err);
-    db.run("INSERT INTO versionedDocs (docid, title, body, version, userid, changed) VALUES (?,?,?,?,?,strftime('%s','now'),?)",
-      this.lastID, req.body.title, req.body.body, 1, req.session.user.username, req.body.comment, 
+    db.run("INSERT INTO versionedDocs (docid, title, layout, body, version, userid, changed, comment) VALUES (?,?,?,?,?,?,strftime('%s','now'),?)",
+      this.lastID, req.body.title, req.body.layout, JSON.stringify(content), 1, req.session.user.username, req.body.comment, 
       function (err) {
         if (err) throw(err);
         res.redirect("/doc/"+req.body.title);
@@ -353,6 +427,33 @@ app.listen(3000, function() {console.log("listening to port 3000");});
 
 
 // *********************************** utility functions ***********************************
+
+function notifySubscribers(docid, title, comment, username) {
+  db.all("SELECT email FROM subscriptions JOIN users ON subscriptions.username = users.username WHERE docid = ?", docid, function(err,data) {
+    if (err) throw(err);
+    if (data.length > 0) {
+      console.log(data);
+
+      // create mailOptions object to send to our subscribers
+      var mailOptions = {
+        from: "projectWIKI@evangriffiths.nyc",
+        to: data.map(function(row) {return row.email;}).join(", "),
+        subject: "projectWIKI: "+title + " updated",
+        text: username + " updated " + title + "\n"+comment
+      };
+
+      // send the message with our transporter
+      transporter.sendMail(mailOptions, function(err,info) {
+        if (err) {
+          console.log("sendMail error: "+err);
+        } else {
+          console.log("sent: "+info.response);
+        }
+      });
+    }
+  });
+}
+
 
 function ensureUser(req) {
   if (!req.session.user) {

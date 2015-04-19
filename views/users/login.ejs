@@ -6,6 +6,8 @@
 </head>
 <body>
 
+<% if (msg.length > 0) { %> <h2><%= msg %></h2> <% } %>
+
 <form method="POST" action="/users/login">
 <p><input name="username" type="text" placeholder="username"></p>
 <p><button type="submit">log in</button></p>

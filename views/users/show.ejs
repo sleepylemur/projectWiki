@@ -1,0 +1,29 @@
+<% include ../partials/header.ejs %>
+
+<h1><%= profilename %></h1>
+
+<h2>Contributed to:</h2>
+<ul>
+  <% titles.forEach(function(title) { %>
+  <li><a href="/doc/<%= title %>"><%= title %></a></li>
+  <% }); %>
+</ul>
+
+<% if (user.username === profilename) { %>
+
+<h2>Subscriptions:</h2>
+<ul>
+  <% subscriptions.forEach(function(sub) { %>
+  <li>
+    <a href="/doc/<%= sub.title %>"><%= sub.title %></a>
+    <form action="/subscription/<%= profilename %>/<%= sub.docid %>?_method=DELETE" method="POST">
+      <button type="submit">unsubscribe</button>
+    </form>
+  </li>
+  <% }); %>
+</ul>
+
+<% } %>
+
+</body>
+</html>

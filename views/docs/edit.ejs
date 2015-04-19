@@ -1,5 +1,8 @@
 <% include ../partials/header %>
 <a href="/doc/<%= docid %>/history">show history</a>
+<form action="/doc/<%= docid %>/subscribe" method="POST">
+  <button type="submit">subscribe to changes</button>
+</form>
 
 <form action=<%= formaction %> method="POST" onsubmit="return testSubmit()">
   <ul>

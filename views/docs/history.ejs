@@ -13,7 +13,7 @@
 
     <tr>
       <td><%= row.title %>
-      <td><%= row.userid %>
+      <td><a href="/user/<%= row.userid %>"><%= row.userid %></a>
       <td><%= row.comment %>
       <td><%= row.time %>
       <td><form method="POST" action="/doc/<%= row.docid %>/revert/<%= row.version %>"><button type="submit">revert</button></form>
