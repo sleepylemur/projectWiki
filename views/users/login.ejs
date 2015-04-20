@@ -6,12 +6,16 @@
 </head>
 <body>
 
-<% if (msg.length > 0) { %> <h2><%= msg %></h2> <% } %>
+<p><a href="<%= user.prevpage %>">back</a></p>
+
+<% if (user.loginmessage.length > 0) { %> <h2><%= user.loginmessage %></h2> <% } %>
 
 <form method="POST" action="/users/login">
 <p><input name="username" type="text" placeholder="username"></p>
 <p><button type="submit">log in</button></p>
 </form>
+
+<p><a href="/users/new">Create an account</a></p>
   
 </body>
 </html>

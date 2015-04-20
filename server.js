@@ -69,14 +69,16 @@ app.get("/user/:username/edit", function(req,res) {
 
 
 app.get("/users/login", function (req,res) {
-  res.render("users/login.ejs", {msg: "", css: formcss, title: "", editable: false});
+  ensureUser(req);
+  res.render("users/login.ejs", {user: req.session.user, css: formcss, title: "", editable: false});
 });
 
 app.post("/users/login", function (req,res) {
   ensureUser(req);
   db.get("SELECT username FROM users WHERE username = ?", req.body.username, function(err,data) {
     if (typeof data === 'undefined') {
-      res.render("users/login.ejs", {msg: "username "+req.body.username+" does not exist in our database", css: formcss, title: "", editable: false});
+      req.session.user.loginmessage = "username "+req.body.username+" does not exist in our database";
+      res.render("users/login.ejs", {user: req.session.user, css: formcss, title: "", editable: false});
     } else {
       req.session.user.username = req.body.username;
       res.redirect(req.session.user.curpage);
@@ -102,12 +104,15 @@ app.put("/user/:username", function(req,res) {
 });
 
 
-
+// receive new user form post
 app.post("/users", function (req,res) {
   ensureUser(req);
   db.get("SELECT username FROM users WHERE username = ?",req.body.username, function(err,data) {
-    if (typeof data !== 'undefined') {
+    // if the chosen username is taken or is "guest" then bounce user back to form
+    if (typeof data !== 'undefined' || req.body.username === "guest") {
       res.redirect("users/edit.ejs", {formaction: "/users", msg:"that username is taken", name:req.body.name, email:req.body.email, username:req.body.username, user: req.session.user, css: formcss, title: "new account", editable: false});
+    
+    // else, chosen username isn't taken so insert new user into db
     } else {
       db.run("INSERT INTO users (name,email,username) VALUES (?,?,?)", req.body.name, req.body.email, req.body.username,
         function(err,data) {
@@ -150,7 +155,16 @@ app.get("/user/:username", function(req,res) {
 
 app.post("/doc/:docid/subscribe", function(req,res) {
   ensureUser(req);
-  if (req.session.username !== "guest") {
+
+  // if user is a guest, send them to login before they subscribe
+  if (req.session.user.username === "guest") {
+    req.session.user.prevpage = req.session.user.curpage;
+    req.session.user.curpage = "/doc/"+req.params.docid+"/subscribe";
+    req.session.user.loginmessage = "login to subscribe";
+    res.redirect("/users/login");
+
+  // else, user is logged in, so proceed with doc creation
+  } else {
     db.run("INSERT INTO subscriptions (username, docid) VALUES (?,?)", req.session.user.username, req.params.docid, function(err) {
       if (err) throw(err);
       db.get("SELECT title FROM versionedDocs "+
@@ -162,8 +176,6 @@ app.post("/doc/:docid/subscribe", function(req,res) {
         }
       );
     });
-  } else {
-    res.send("please login before you subscribe");
   }
 });
 
@@ -228,6 +240,8 @@ app.get("/docs/search", function(req,res) {
 
 // retrieve doc by title
 app.get("/doc/:title", function (req,res) {
+
+  // grab current version of doc as indicated by docs table
   db.get( "SELECT title,body,html,css,numpanes FROM"+
           " versionedDocs"+
           " JOIN docs ON docs.docid = versionedDocs.docid AND docs.version = versionedDocs.version"+
@@ -236,17 +250,26 @@ app.get("/doc/:title", function (req,res) {
     req.params.title,
     function(err,data) {
       if (err) throw(err);
+
+      // if we didn't find any doc by that title show error message
       if (typeof data === 'undefined') {
         res.send(req.params.title + " not found.");
+
+      // we found our doc
       } else {
         ensureUser(req);
-        req.session.user.curpage = req.originalUrl;
+        req.session.user.curpage = "/doc/"+req.params.title;
+
+        // swap out [[ ]] tags for their counterparts from our keywords function
         parseTagsInArray(JSON.parse(data.body), keywords, function(arr) {
+
+          // parse the document body into content panes
           var contents = {title: req.params.title};
           for (var i=0; i<arr.length; i++) {
             contents["content"+i] = marked(arr[i]);
           }
-          // console.log(mustache.render(data['html'],contents));
+
+          // render
           res.render("docs/show.ejs",{
             title: data.title,
             content: mustache.render(data.html,contents),
@@ -254,7 +277,6 @@ app.get("/doc/:title", function (req,res) {
             user: req.session.user,
             editable: true});
         });
-        // res.render("docs/show.ejs",{title: data.title, body: marked(parseTags(data.body, keywords)), user: req.session.user});
       }
     });
 });
@@ -264,79 +286,119 @@ app.get("/doc/:title", function (req,res) {
 
 // retrieve new doc form. uses same form as editpage
 app.get("/docs/new", function (req,res) {
-  db.all("SELECT name,numpanes FROM layouts", function (err,data) {
-    if (err) throw(err);
-    res.render("docs/edit.ejs", {
-      formaction: "/docs",
-      docid:0,
-      title: "untitled",
-      body: '[""]',
-      comment: "created",
-      layoutname: data[0].name,
-      numpanes: data[0].numpanes,
-      user: req.session.user,
-      layouts: data,
-      css: formcss,
-      editable: false
+  ensureUser(req);
+
+  // if user is a guest, send them to the login page before we allow them to create a doc
+  if (req.session.user.username === "guest") {
+    req.session.user.prevpage = req.session.user.curpage;
+    req.session.user.curpage = "/docs/new";
+    req.session.user.loginmessage = "login to create a new doc";
+    res.redirect("/users/login");
+
+  // user is logged in, so proceed with doc creation
+  } else {
+    db.all("SELECT name,numpanes FROM layouts", function (err,data) {
+      if (err) throw(err);
+      res.render("docs/edit.ejs", {
+        formaction: "/docs",
+        docid:0,
+        title: "untitled",
+        body: '[""]',
+        comment: "created",
+        layoutname: data[0].name,
+        numpanes: data[0].numpanes,
+        user: req.session.user,
+        layouts: data,
+        css: formcss,
+        editable: false
+      });
     });
-  });
+  }
 });
 
 // retrieve edit page for doc
 app.get("/doc/:title/edit", function (req,res) {
-  db.get( "SELECT title,body,docs.docid,numpanes,name "+
-          "FROM versionedDocs "+
-          "JOIN docs ON docs.docid = versionedDocs.docid AND docs.version = versionedDocs.version "+
-          "JOIN layouts ON versionedDocs.layout = layouts.name "+
-          "WHERE title = ?",
-    req.params.title,
-    function(err,data) {
-      if (err) throw(err);
-      if (typeof data === "undefined") {
-        res.send(req.params.title + " not found.");
-      } else {
-        db.all("SELECT name,numpanes FROM layouts", function(err,layouts) {
-          ensureUser(req);
-          req.session.user.curpage = req.originalUrl;
-          res.render("docs/edit.ejs",{
-            formaction: "/doc/"+data.docid,
-            docid: data.docid,
-            title: data.title,
-            body: data.body,
-            comment: "updated",
-            layoutname: data.name,
-            numpanes: data.numpanes,
-            user: req.session.user,
-            layouts: layouts,
-            css: formcss,
-            editable: false});
-        });
+
+  // if user is a guest, send them to the login page before we allow them to edit a doc
+  if (req.session.user.username === "guest") {
+    req.session.user.prevpage = "/doc/"+req.params.title;
+    req.session.user.curpage = "/doc/"+req.params.title+"/edit";
+    req.session.user.loginmessage = "login to edit "+req.params.title;
+    res.redirect("/users/login");
+
+  // user is logged in, so proceed with doc editing
+  } else {
+    db.get( "SELECT title,body,docs.docid,numpanes,name "+
+            "FROM versionedDocs "+
+            "JOIN docs ON docs.docid = versionedDocs.docid AND docs.version = versionedDocs.version "+
+            "JOIN layouts ON versionedDocs.layout = layouts.name "+
+            "WHERE title = ?",
+      req.params.title,
+      function(err,data) {
+        if (err) throw(err);
+        if (typeof data === "undefined") {
+          res.send(req.params.title + " not found.");
+        } else {
+          db.all("SELECT name,numpanes FROM layouts", function(err,layouts) {
+            ensureUser(req);
+            res.render("docs/edit.ejs",{
+              formaction: "/doc/"+data.docid,
+              docid: data.docid,
+              title: data.title,
+              body: data.body,
+              comment: "updated",
+              layoutname: data.name,
+              numpanes: data.numpanes,
+              user: req.session.user,
+              layouts: layouts,
+              css: formcss,
+              editable: false});
+          });
+        }
       }
-    });
+    );
+  }
 });
 
 // update doc docid.
 app.post("/doc/:docid", function (req,res) {
+  ensureUser(req);
+
+  // get highest numbered version so we can increment by one
   db.get("SELECT max(version),title FROM versionedDocs WHERE docid = ?", req.params.docid, function (err,data) {
     if (err) throw(err);
-    if (typeof data === "undefined") { // maybe create a new entry here.
+
+    // if we failed to get doc, send error message
+    if (typeof data === "undefined") {
       res.send("oops! couldn't find the doc to update");
+
+    // else, we got our version, so increment it by one for our new version
     } else {
       version = data["max(version)"] + 1;
-      // console.log(req.body);
+
+      // collect all our paned content in an array
       var content=[];
       for (var i=0; i<req.body.numpanes; i++) {
         content.push(req.body["content"+i]);
       }
-      ensureUser(req);
-      if (data.title === "main") req.body.title = data.title; // disable renaming the main page
+
+      // block renaming of the main page
+      if (data.title === "main") req.body.title = data.title;
+
+      // perform db insert of our newest version to versionedDocs
       db.run("INSERT INTO versionedDocs (docid,title,layout,body,version,userid,changed,comment) VALUES (?,?,?,?,?,?,strftime('%s','now'),?)",
         req.params.docid, req.body.title, req.body.layout, JSON.stringify(content), version, req.session.user.username, req.body.comment,
         function (err) {
           if (err) throw(err);
+
+          // update docs to point to our new version
           db.run("UPDATE docs SET version = ? WHERE docid = ?", version, req.params.docid, function (err) {
             if (err) throw(err);
+
+            // redirect to the new document
             res.redirect("/doc/"+req.body.title);
+
+            // notify subscribers of the change
             notifySubscribers(req.params.docid, req.body.title, req.body.comment, req.session.user.username);
           });
         }
@@ -516,12 +578,14 @@ function notifySubscribers(docid, title, comment, username) {
 }
 
 
+// call this to set up our session variable to deal with users entering our site on random pages
 function ensureUser(req) {
   if (!req.session.user) {
-    req.session.user = {username: "guest", curpage: "/"};
+    req.session.user = {username: "guest", curpage: "/", prevpage: "/", loginmessage: ""};
   }
 }
 
+// function called by parseTags to perform the actual tag replacement once a tag is located
 function keywords(text,next) {
   if (text.charAt(0) === '!') {
     var func = text.substring(1).trim().replace(/\s+/g," ").split(' ');
@@ -606,6 +670,7 @@ function parseTags(string,callback,next) {
   var state = 0;
   var curtagid = -1;
 
+  // run through string char by char to find our tags
   for (var i=0; i<string.length; i++) {
     switch (state) {
       case -1: //outside tag and backslashed
@@ -642,8 +707,9 @@ function parseTags(string,callback,next) {
     }
   }
 
+  // now that we have a list of tags, loop through them and get replacements from callback
   var lastpos = 0;
-  return innerReplaceTags(tags, -1, 0, string, "", "");
+  innerReplaceTags(tags, -1, 0, string, "", "");
   function innerReplaceTags(tags, tagid, lastpos, origstring, curstring, newstring) {
     curstring += newstring;
     tagid++;
