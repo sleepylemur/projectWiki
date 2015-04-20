@@ -55,9 +55,11 @@ app.use(bodyParser.urlencoded({
 // *********************************** user login routes ***********************************
 
 app.get("/users/new", function (req,res) {
+  ensureUser(req);
   res.render("users/edit.ejs", {formaction: "/users", msg:"", name:"", email:"", username:"", user: req.session.user, css: formcss, title: "new account", editable: false});
 });
 app.get("/user/:username/edit", function(req,res) {
+  ensureUser(req);
   db.get("SELECT username,name,email FROM users WHERE username = ?", req.params.username, function(err,data) {
     if (typeof data === 'undefined') {
       res.send("user not found");
@@ -128,6 +130,7 @@ app.post("/users", function (req,res) {
 // *********************************** user profile routes ***********************************
 
 app.get("/user/:username", function(req,res) {
+  ensureUser(req);
   db.get("SELECT username,name,email FROM users WHERE username = ?",req.params.username, function(err,userdata) {
     if (typeof userdata === 'undefined') {
       res.send("user not found");
@@ -240,6 +243,7 @@ app.get("/docs/search", function(req,res) {
 
 // retrieve doc by title
 app.get("/doc/:title", function (req,res) {
+  ensureUser(req);
 
   // grab current version of doc as indicated by docs table
   db.get( "SELECT title,body,html,css,numpanes FROM"+
@@ -251,9 +255,35 @@ app.get("/doc/:title", function (req,res) {
     function(err,data) {
       if (err) throw(err);
 
-      // if we didn't find any doc by that title show error message
+      // if we didn't find any doc by that title then go to a new document form
       if (typeof data === 'undefined') {
-        res.send(req.params.title + " not found.");
+
+        // if user is a guest, send them to the login page before we allow them to create a doc
+        if (req.session.user.username === "guest") {
+          req.session.user.prevpage = req.session.user.curpage;
+          req.session.user.curpage = "/doc/"+req.params.title;
+          req.session.user.loginmessage = req.params.title + " not found. Login to create a new doc";
+          res.redirect("/users/login");
+
+        // user is logged in, so proceed with doc creation
+        } else {
+          db.all("SELECT name,numpanes FROM layouts", function (err,data) {
+            if (err) throw(err);
+            res.render("docs/edit.ejs", {
+              formaction: "/docs",
+              docid:0,
+              title: req.params.title,
+              body: '[""]',
+              comment: "created",
+              layoutname: data[0].name,
+              numpanes: data[0].numpanes,
+              user: req.session.user,
+              layouts: data,
+              css: formcss,
+              editable: false
+            });
+          });
+        }
 
       // we found our doc
       } else {
@@ -318,6 +348,7 @@ app.get("/docs/new", function (req,res) {
 
 // retrieve edit page for doc
 app.get("/doc/:title/edit", function (req,res) {
+  ensureUser(req);
 
   // if user is a guest, send them to the login page before we allow them to edit a doc
   if (req.session.user.username === "guest") {
@@ -421,7 +452,7 @@ app.post("/docs", function (req,res) {
   for (var i=0;i<req.body.numpanes; i++) {
     content.push(req.body["content"+i]);
   }
-  db.run("INSERT INTO docs (version) VALUES (1)", function (err) {
+  db.run("INSERT INTO docs (version, docid) SELECT 1, max(docid)+1 FROM versionedDocs", function (err) {
     if (err) throw(err);
     db.run("INSERT INTO versionedDocs (docid, title, layout, body, version, userid, changed, comment) VALUES (?,?,?,?,?,?,strftime('%s','now'),?)",
       this.lastID, req.body.title, req.body.layout, JSON.stringify(content), 1, req.session.user.username, req.body.comment, 
@@ -435,6 +466,7 @@ app.post("/docs", function (req,res) {
 // *********************************** doc history routes ***********************************
 
 app.get("/doc/:docid/history", function (req,res) {
+  ensureUser(req);
   db.all("SELECT title,userid,datetime(changed,'unixepoch') as time,comment,docid,version FROM versionedDocs WHERE docid = ?", req.params.docid, function(err,data) {
     if (err) throw(err);
     if (data.length === 0) {
@@ -476,6 +508,7 @@ app.post("/doc/:docid/revert/:version", function(req,res) {
 // *********************************** layout edit routes ***********************************
 
 app.get("/layout/:name/edit", function (req,res) {
+  ensureUser(req);
   db.get("SELECT name,numpanes,html,css FROM layouts WHERE name = ?", req.params.name, function(err,data) {
     if (err) throw(err);
     res.render("layouts/edit.ejs", {msg: "", name:data.name, oldname:data.name, numpanes:data.numpanes, html:data.html, cssdata: data.css, css: formcss, user: req.session.user, title: "", editable: false});
@@ -522,7 +555,9 @@ app.put("/layout/:name", function(req,res) {
 
 // is doc title available?
 app.post("/titleIsAvailable", function (req,res) {
-  db.get("SELECT docid FROM versionedDocs WHERE title = ? AND docid != ?", req.body.title, req.body.docid, function (err,data) {
+  db.get("SELECT docs.docid FROM versionedDocs "+
+    "JOIN docs ON docs.docid = versionedDocs.docid AND docs.version = versionedDocs.version "+
+    "WHERE title = ? AND docs.docid != ?", req.body.title, req.body.docid, function (err,data) {
     if (typeof data === "undefined") {
       res.send(true);
     } else {
