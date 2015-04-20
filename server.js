@@ -546,7 +546,7 @@ app.post("/titleIsAvailable", function (req,res) {
 // *********************************** server start ***********************************
 
 
-app.listen(3000, function() {console.log("listening to port 3000");});
+app.listen(3001, function() {console.log("listening to port 3001");});
 
 
 // *********************************** utility functions ***********************************
@@ -585,28 +585,39 @@ function ensureUser(req) {
   }
 }
 
-// function called by parseTags to perform the actual tag replacement once a tag is located
+
+// keywords is called by parseTags to perform the actual tag replacement once a tag is located
 function keywords(text,next) {
+
+  // check if the first char is a !, which means that our tag is a function
   if (text.charAt(0) === '!') {
     var func = text.substring(1).trim().replace(/\s+/g," ").split(' ');
     if (func.length > 0) {
       var args = func.slice(1);
+
+      // alldocs - display list of links of all current documents
       if (func[0] === 'alldocs') {
         db.all("SELECT title FROM docs JOIN versionedDocs ON docs.docid = versionedDocs.docid AND docs.version = versionedDocs.version", function (err,data) {
           if (err) throw(err);
           next(data.map(function(row) {return "- ["+row.title+"]("+row.title+")";}).join('\n'));
         });
+
+      // recentdocs num - display list of most recently edited documents, limited to num (default 10)
       } else if (func[0] === 'recentdocs') {
         var limit = args.length>0 ? args[0] : 10;
         db.all("SELECT title FROM docs JOIN versionedDocs ON docs.docid = versionedDocs.docid AND docs.version = versionedDocs.version ORDER BY versionedDocs.changed DESC LIMIT ?",limit , function (err,data) {
           if (err) throw(err);
           next(data.map(function(row) {return "- ["+row.title+"]("+row.title+")";}).join('\n'));
         });
+
+      // alllayouts - display list of links to edit pages of all the layouts
       } else if (func[0] === 'alllayouts') {
         db.all("SELECT name FROM layouts", function(err,data){
           if (err) throw(err);
           next(data.map(function(row) {return "- ["+row.name+"](/layout/"+row.name+"/edit)";}).join('\n'));
         });
+
+      // instagram tag - display low_resolution version of the first result of an instagram api call with tag
       } else if (func[0] === 'instagram' && args.length > 0) {
         var url = "https://api.instagram.com/v1/tags/" + args.join('+') + "/media/recent?client_id=" + secrets.instagram.apikey;
         try {
@@ -626,17 +637,45 @@ function keywords(text,next) {
               }
             }
           });
+
+        // handle unexpected request errors without crashing server
         } catch (err) {
           next("err thrown: "+err);
         }
+
+      // referers title - display a list of all documents with [[title]] in their body somewhere
+      } else if (func[0] === 'referers') {
+        if (args.length !== 1) {
+          next("referers takes one argument, a doc title");
+        } else {
+
+          // grab doc list from db
+          db.all("SELECT title FROM versionedDocs "+
+            "JOIN docs ON docs.docid = versionedDocs.docid AND docs.version = versionedDocs.version "+
+            "WHERE body LIKE ?", "%[["+args[0]+"]]%",
+            function(err,data) {
+              if (err) throw(err);
+
+              // convert titles to markdown links and send them to next
+              next( data.map(function(row) {return "["+row.title+"](/doc/"+row.title+")";}).join('\n') );
+            }
+          );
+        }
+
+      // unknown function
       } else {
         next("unknown function: "+func);
       }
+
+    // function tags with empty string inside, so render empty string
     } else {
       next("");
     }
+
+  // no ! in front means this is a local document link
   } else {
-    next("["+text+"]("+text+")"); // markdown link to doctitle
+    var doctitle = text.trim();
+    next("["+doctitle+"]("+doctitle+")"); // markdown link to doctitle
   }
 }
 
