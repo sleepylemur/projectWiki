@@ -56,7 +56,7 @@ app.use(bodyParser.urlencoded({
 
 app.get("/users/new", function (req,res) {
   ensureUser(req);
-  res.render("users/edit.ejs", {formaction: "/users", msg:"", name:"", email:"", username:"", user: req.session.user, css: formcss, title: "new account", editable: false});
+  res.render("users/edit.ejs", {usernamefixed: false, formaction: "/users", msg:"", name:"", email:"", username:"", user: req.session.user, css: formcss, title: "new account", editable: false});
 });
 app.get("/user/:username/edit", function(req,res) {
   ensureUser(req);
@@ -507,18 +507,34 @@ app.post("/doc/:docid/revert/:version", function(req,res) {
 
 // *********************************** layout edit routes ***********************************
 
+app.get("/layouts/new", function(req,res) {
+  ensureUser(req);
+
+  // if user is a guest, send them to the login page before we allow them to make a new layout
+  if (req.session.user.username === "guest") {
+    req.session.user.prevpage = req.session.user.curpage;
+    req.session.user.curpage = "/layouts/new";
+    req.session.user.loginmessage = "login to create new layout";
+    res.redirect("/users/login");
+
+  // user is logged in, so proceed with layout making
+  } else {
+    res.render("layouts/edit.ejs", {msg: "", name:"", formaction:"/layouts", numpanes:1, html:"", cssdata: "", css: formcss, user: req.session.user, title: "new layout", editable: false});
+  }
+});
+
 app.get("/layout/:name/edit", function (req,res) {
   ensureUser(req);
   db.get("SELECT name,numpanes,html,css FROM layouts WHERE name = ?", req.params.name, function(err,data) {
     if (err) throw(err);
-    res.render("layouts/edit.ejs", {msg: "", name:data.name, oldname:data.name, numpanes:data.numpanes, html:data.html, cssdata: data.css, css: formcss, user: req.session.user, title: "", editable: false});
+    res.render("layouts/edit.ejs", {msg: "", name:data.name, formaction:"/layout/"+data.name+"?_method=PUT", numpanes:data.numpanes, html:data.html, cssdata: data.css, css: formcss, user: req.session.user, title: "Layout "+req.params.name, editable: false});
   });
 });
 
 app.put("/layout/:name", function(req,res) {
   if (req.params.name === "plain" && req.body.name !== "plain") {
     // if somebody tries to rename "plain" layout bounce them back to the edit form
-    res.render("layouts/edit.ejs", {msg: "Can't rename \"plain\" layout.", name:"plain", oldname:req.params.name, numpanes:req.body.numpanes, html:req.body.html, cssdata:req.body.css, css: formcss, user: req.session.user, title: "", editable: false});
+    res.render("layouts/edit.ejs", {msg: "Can't rename \"plain\" layout.", name:"plain", formaction:"/layout/"+req.params.name+"?_method=PUT", numpanes:req.body.numpanes, html:req.body.html, cssdata:req.body.css, css: formcss, user: req.session.user, title: "", editable: false});
   } else {
     if (req.params.name !== req.body.name) { //we are trying to rename a layout, so make sure it isn't in use by somebody else
       db.get("SELECT name FROM layouts WHERE name = ?", req.body.name, function(err,data) {
@@ -530,7 +546,7 @@ app.put("/layout/:name", function(req,res) {
           //name is in use, so go back to the edit form
           res.render(
             "layouts/edit.ejs",
-            {msg: "That name is in use by another layout", name:req.body.name, oldname:req.params.name, numpanes:req.body.numpanes, html:req.body.html, cssdata:req.body.css, css: formcss, user: req.session.user, title: "", editable: false}
+            {msg: "That name is in use by another layout", name:req.body.name, formaction:"/layout/"+req.params.name+"?_method=PUT", numpanes:req.body.numpanes, html:req.body.html, cssdata:req.body.css, css: formcss, user: req.session.user, title: "", editable: false}
           );
         }
       });
@@ -547,6 +563,31 @@ app.put("/layout/:name", function(req,res) {
       );
     }
   }
+});
+
+// create new layout
+app.post("/layouts", function(req,res) {
+  ensureUser(req);
+
+  //check if layout name is taken
+  db.get("SELECT name FROM layouts WHERE name = ?", req.body.name, function(err,data) {
+    if (err) throw(err);
+
+    //if name is taken then bounce back to the form
+    if (typeof data !== 'undefined') {
+      res.render("layouts/edit.ejs", {msg: req.body.name+" is already taken", name: req.body.name, formaction:"/layouts", numpanes:req.body.numpanes, html:req.body.html, cssdata:req.body.css, css: formcss, user: req.session.user, title: "", editable: false});
+    
+    // name is free, so insert into db
+    } else {
+      db.run("INSERT INTO layouts (name,html,numpanes,css) VALUES (?,?,?,?)",
+        req.body.name, req.body.html, req.body.numpanes, req.body.css,
+        function(err) {
+          if (err) throw(err);
+          res.redirect(req.session.user.curpage);
+        }
+      );
+    }
+  });
 });
 
 
