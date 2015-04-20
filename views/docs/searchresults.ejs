@@ -1,0 +1,17 @@
+<% include ../partials/header.ejs %>
+
+<h2>Title Matches</h2>
+<ul>
+<% titles.forEach(function(title) { %>
+  <li><a href="/doc/<%= title.title %>"><%= title.title %></a></li>
+<% }); %>
+</ul>
+<h2>Body Matches</h2>
+<ul>
+<% bodies.forEach(function(body) { %>
+  <li><a href="/doc/<%= body.title %>"><%= body.title %></a></li>
+<% }); %>
+</ul>
+
+</body>
+</html>

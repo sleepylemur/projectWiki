@@ -10,7 +10,11 @@
 <% if (msg.length > 0) { %> <h2><%= msg %></h2> <% } %>
 
 <form action="<%= formaction %>" method="POST" onsubmit="canSubmit()">
+<% if (usernamefixed) { %>
+<p><label for="username">username</label><input type="text" name="username" value="<%= username %>" disabled></p>
+<% } else { %>
 <p><label for="username">username</label><input type="text" name="username" value="<%= username %>"></p>
+<% } %>
 <p><label for="name">full name</label><input type="text" name="name" value="<%= name %>"></p>
 <p><label for="email">email</label><input type="text" name="email" value="<%= email %>"></p>
 <p><button type="submit">submit</button></p>

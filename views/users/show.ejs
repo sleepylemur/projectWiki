@@ -1,6 +1,6 @@
 <% include ../partials/header.ejs %>
 
-<h1><%= profilename %></h1>
+<h1><%= profile.username %></h1>
 
 <h2>Contributed to:</h2>
 <ul>
@@ -9,18 +9,26 @@
   <% }); %>
 </ul>
 
-<% if (user.username === profilename) { %>
+<% if (user.username === profile.username) { %>
 
 <h2>Subscriptions:</h2>
 <ul>
   <% subscriptions.forEach(function(sub) { %>
   <li>
     <a href="/doc/<%= sub.title %>"><%= sub.title %></a>
-    <form action="/subscription/<%= profilename %>/<%= sub.docid %>?_method=DELETE" method="POST">
+    <form action="/subscription/<%= profile.username %>/<%= sub.docid %>?_method=DELETE" method="POST">
       <button type="submit">unsubscribe</button>
     </form>
   </li>
   <% }); %>
+</ul>
+
+<h2>Account Info:</h2>
+<ul>
+  <li>username: <%= profile.username %></li>
+  <li>full name: <%= profile.name %></li>
+  <li>email: <%= profile.email %></li>
+  <li><a href="/user/<%= profile.username %>/edit">edit account info</a></li>
 </ul>
 
 <% } %>

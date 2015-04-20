@@ -57,6 +57,16 @@ app.use(bodyParser.urlencoded({
 app.get("/users/new", function (req,res) {
   res.render("users/edit.ejs", {formaction: "/users", msg:"", name:"", email:"", username:"", user: req.session.user, css: formcss, title: "new account", editable: false});
 });
+app.get("/user/:username/edit", function(req,res) {
+  db.get("SELECT username,name,email FROM users WHERE username = ?", req.params.username, function(err,data) {
+    if (typeof data === 'undefined') {
+      res.send("user not found");
+    } else {
+      res.render("users/edit.ejs", {usernamefixed: true, formaction: "/user/"+req.params.username+"?_method=PUT", msg:"", name:data.name, email:data.email, username:data.username, user: req.session.user, css: formcss, title: data.username, editable: false});
+    }
+  });
+});
+
 
 app.get("/users/login", function (req,res) {
   res.render("users/login.ejs", {msg: "", css: formcss, title: "", editable: false});
@@ -80,6 +90,19 @@ app.get("/users/logout", function (req,res) {
   res.redirect(req.session.user.curpage);
 });
 
+// receive user update
+app.put("/user/:username", function(req,res) {
+  db.run("UPDATE users SET name=?, email=? WHERE username=?",
+    req.body.name, req.body.email, req.params.username,
+    function(err) {
+      if (err) throw(err);
+      res.redirect("/user/"+req.params.username);
+    }
+  );
+});
+
+
+
 app.post("/users", function (req,res) {
   ensureUser(req);
   db.get("SELECT username FROM users WHERE username = ?",req.body.username, function(err,data) {
@@ -100,21 +123,27 @@ app.post("/users", function (req,res) {
 // *********************************** user profile routes ***********************************
 
 app.get("/user/:username", function(req,res) {
-  db.all("SELECT docid,title,max(version) FROM versionedDocs WHERE docid IN "+
-    "(SELECT DISTINCT docid FROM versionedDocs WHERE userid = ?) "+
-    "GROUP BY docid", req.params.username, function(err,data) {
-      var titles = data.map(function(row) {return row.title;});
-      db.all("SELECT subscriptions.docid as docid, title "+
-        "FROM subscriptions "+
-        "JOIN docs ON subscriptions.docid = docs.docid "+
-        "JOIN versionedDocs ON docs.docid = versionedDocs.docid AND docs.version = versionedDocs.version "+
-        "WHERE subscriptions.username = ?", req.params.username,
-        function(err,subdata) {
-          res.render("users/show.ejs", {profilename: req.params.username, titles: titles, subscriptions: subdata, user: req.session.user, css: formcss, title: req.params.username + "'s Profile", editable: false});
+  db.get("SELECT username,name,email FROM users WHERE username = ?",req.params.username, function(err,userdata) {
+    if (typeof userdata === 'undefined') {
+      res.send("user not found");
+    } else {
+      db.all("SELECT docid,title,max(version) FROM versionedDocs WHERE docid IN "+
+        "(SELECT DISTINCT docid FROM versionedDocs WHERE userid = ?) "+
+        "GROUP BY docid", req.params.username, function(err,data) {
+          var titles = data.map(function(row) {return row.title;});
+          db.all("SELECT subscriptions.docid as docid, title "+
+            "FROM subscriptions "+
+            "JOIN docs ON subscriptions.docid = docs.docid "+
+            "JOIN versionedDocs ON docs.docid = versionedDocs.docid AND docs.version = versionedDocs.version "+
+            "WHERE subscriptions.username = ?", req.params.username,
+            function(err,subdata) {
+              res.render("users/show.ejs", {profile: userdata, titles: titles, subscriptions: subdata, user: req.session.user, css: formcss, title: req.params.username + "'s Profile", editable: false});
+            }
+          );
         }
       );
     }
-  );
+  });
 });
 
 // *********************************** user subscriptions ***********************************
@@ -151,17 +180,49 @@ app.delete("/subscription/:username/:docid", function(req,res) {
 
 // retrieve index of docs
 app.get("/", function (req,res) {
-  res.redirect("doc/main");
+  ensureUser(req);
+  res.redirect("/doc/main");
+});
+app.get("/docs", function (req,res) {
+  ensureUser(req);
+  res.redirect("/doc/main");
 });
 
-app.get("/docs", function (req,res) {
-  res.redirect("doc/main");
-  // db.all("SELECT title,docs.docid,docs.version FROM docs JOIN versionedDocs ON docs.docid = versionedDocs.docid AND docs.version = versionedDocs.version", function(err,data) {
-  //   if (err) throw(err);
-  //   ensureUser(req);
-  //   req.session.user.curpage = req.originalUrl;
-  //   res.render("docs/index.ejs",{docs: data, user: req.session.user});
-  // });
+
+// search for doc
+app.get("/docs/search", function(req,res) {
+  ensureUser(req);
+  if (typeof req.query.search === 'undefined' || req.query.search.length === 0) {
+
+    // if searchstring is empty then redirect to main
+    res.redirect("/doc/main");
+  } else {
+
+    // we have a search string, so find all matching current titles in versionedDocs
+    db.all("SELECT title FROM versionedDocs JOIN docs ON docs.docid = versionedDocs.docid AND docs.version = versionedDocs.version "+
+      "WHERE title LIKE ?", "%"+req.query.search+"%", function(err,titledata) {
+        if (err) throw(err);
+
+        // also search for matching document bodies
+        db.all("SELECT title FROM versionedDocs "+
+          "JOIN docs ON docs.docid = versionedDocs.docid AND docs.version = versionedDocs.version "+
+          "WHERE body LIKE ?", "%"+req.query.search+"%", function(err,bodydata) {
+            if (err) throw(err);
+
+            //render our results
+            res.render("docs/searchresults.ejs", {
+              titles: titledata,
+              bodies: bodydata,
+              title: "Search Results",
+              css: formcss,
+              user: req.session.user,
+              editable: false
+            });
+          }
+        );
+      }
+    );
+  }
 });
 
 
@@ -409,15 +470,15 @@ app.post("/titleIsAvailable", function (req,res) {
 });
 
 // is username available?
-app.post("/usernameIsAvailable", function (req,res) {
-  db.get("SELECT username FROM users", function (err,data) {
-    if (typeof data === "undefined") {
-      res.send(true);
-    } else {
-      res.send(false);
-    }
-  });
-});
+// app.post("/usernameIsAvailable", function (req,res) {
+//   db.get("SELECT username FROM users", function (err,data) {
+//     if (typeof data === "undefined") {
+//       res.send(true);
+//     } else {
+//       res.send(false);
+//     }
+//   });
+// });
 
 
 // *********************************** server start ***********************************
@@ -594,16 +655,4 @@ function parseTags(string,callback,next) {
       next(curstring);
     }
   }
-
-  // tags.forEach(function(tag) {
-  //   var replacement = callback(tag.text);
-  //   console.log(lastpos + " " + tag.start + " " + tag.length + " " +tag.text);
-  //   newstring += string.substring(lastpos,tag.start) + replacement;
-  //   console.log("!!!!"+callback("!alldocs")+"????");
-  //   lastpos = tag.start+tag.length;
-  // });
-  // newstring += string.substring(lastpos);
-
-  // // console.log("????"+JSON.stringify(tags) + "!!!" + callback("!alldocs"));
-  // return newstring;
 }
