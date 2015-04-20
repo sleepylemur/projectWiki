@@ -546,7 +546,7 @@ app.post("/titleIsAvailable", function (req,res) {
 // *********************************** server start ***********************************
 
 
-app.listen(3001, function() {console.log("listening to port 3001");});
+app.listen(3000, function() {console.log("listening to port 3000");});
 
 
 // *********************************** utility functions ***********************************
