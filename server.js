@@ -96,6 +96,7 @@ app.get("/users/logout", function (req,res) {
 
 // receive user update
 app.put("/user/:username", function(req,res) {
+  ensureUser(req);
   db.run("UPDATE users SET name=?, email=? WHERE username=?",
     req.body.name, req.body.email, req.params.username,
     function(err) {
@@ -183,6 +184,7 @@ app.post("/doc/:docid/subscribe", function(req,res) {
 });
 
 app.delete("/subscription/:username/:docid", function(req,res) {
+  ensureUser(req);
   db.run("DELETE FROM subscriptions WHERE username = ? AND docid = ?", req.params.username, req.params.docid, function(err) {
     if (err) throw(err);
     res.redirect("/user/"+req.params.username);
@@ -440,6 +442,7 @@ app.post("/doc/:docid", function (req,res) {
 
 // delete doc by title
 app.delete("/doc/:docid", function(req,res) {
+  ensureUser(req);
   db.run("DELETE FROM docs WHERE docid = ?", req.params.docid, function(err) {
     if (err) throw(err);
     res.redirect("/doc/main");
@@ -448,6 +451,7 @@ app.delete("/doc/:docid", function(req,res) {
 
 // add new doc
 app.post("/docs", function (req,res) {
+  ensureUser(req);
   var content = [];
   for (var i=0;i<req.body.numpanes; i++) {
     content.push(req.body["content"+i]);
@@ -486,6 +490,7 @@ app.get("/doc/:docid/history", function (req,res) {
 //docid INTEGER, title TEXT, layout TEXT, body TEXT, version INTEGER, userid INTEGER, changed INTEGER, comment TEXT
 
 app.post("/doc/:docid/revert/:version", function(req,res) {
+  ensureUser(req);
   db.get("SELECT max(version) as version FROM versionedDocs WHERE docid = ?", req.params.docid, function(err,versiondata) {
     if (err) throw(err);
     var version = Number(versiondata.version) + 1;
@@ -532,6 +537,7 @@ app.get("/layout/:name/edit", function (req,res) {
 });
 
 app.put("/layout/:name", function(req,res) {
+  ensureUser(req);
   if (req.params.name === "plain" && req.body.name !== "plain") {
     // if somebody tries to rename "plain" layout bounce them back to the edit form
     res.render("layouts/edit.ejs", {msg: "Can't rename \"plain\" layout.", name:"plain", formaction:"/layout/"+req.params.name+"?_method=PUT", numpanes:req.body.numpanes, html:req.body.html, cssdata:req.body.css, css: formcss, user: req.session.user, title: "", editable: false});
@@ -596,6 +602,7 @@ app.post("/layouts", function(req,res) {
 
 // is doc title available?
 app.post("/titleIsAvailable", function (req,res) {
+  ensureUser(req);
   db.get("SELECT docs.docid FROM versionedDocs "+
     "JOIN docs ON docs.docid = versionedDocs.docid AND docs.version = versionedDocs.version "+
     "WHERE title = ? AND docs.docid != ?", req.body.title, req.body.docid, function (err,data) {
